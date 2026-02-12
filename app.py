@@ -3,16 +3,15 @@ load_dotenv()
 
 from langchain_groq import ChatGroq
 from langchain_core.tools import tool
-from langchain.agents import create_agent
-from langchain_core.messages import HumanMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
 
+from langchain_core.prompts import ChatPromptTemplate
 
 from Navigation.Browser.manager import BrowserManager
 from Navigation.Tools.actions import ActionTools
 from Navigation.Tools.perception import PerceptionTools
 from Navigation.Tools.navigation import NavigationTools
 from Navigation.Tools.Models.element import ElementStore
+from Navigation.Tools.google_services import GoogleServiceManager
 
 session = BrowserManager(headless=False)
 navigation_tools = NavigationTools(session)
@@ -23,6 +22,13 @@ action_tools = ActionTools(session, element_store, perception_tools, file_path="
 from concurrent.futures import ThreadPoolExecutor
 
 browser_executor = ThreadPoolExecutor(max_workers=1)
+
+try:
+    google_manager = GoogleServiceManager()
+    print("Google Services initialized successfully.")
+except Exception as e:
+    print(f"Warning: Google Services failed to initialize. Ensure credentials.json is present. Error: {e}")
+    google_manager = None
 
 
 @tool
@@ -49,7 +55,74 @@ def extract_elements() -> str:
     future = browser_executor.submit(perception_tools.take_snapshot)
     return future.result()
 
-tools = [open_page, click_elements, type_in_elements, extract_elements]
+@tool
+def get_resume(filename: str = "resume") -> str:
+    """
+    Search for a resume PDF in Google Drive and return its text content.
+    Args:
+        filename (str): The name (or partial name) of the file to search for. Defaults to "resume".
+    """
+    if not google_manager:
+        return "Google Services not initialized."
+    return google_manager.get_resume_text(filename)
+
+@tool
+def schedule_interview(summary: str, start_time: str, duration: int = 60) -> str:
+    """
+    Schedule an interview on Google Calendar.
+    Args:
+        summary (str): Title of the event (e.g., "Interview with Company X").
+        start_time (str): Start time in ISO format (e.g., "2023-10-27T10:00:00").
+        duration (int): Duration in minutes. Defaults to 60.
+    """
+    if not google_manager:
+        return "Google Services not initialized."
+    return google_manager.schedule_event(summary, start_time, duration)
+
+@tool
+def get_unread_emails() -> str:
+    """
+    Get a summary of unread emails in the inbox.
+    Returns: A formatted string of unread emails with sender, subject, and snippet.
+    """
+    if not google_manager:
+        return "Google Services not initialized."
+    emails = google_manager.search_emails(query='is:unread', max_results=5)
+    if not emails:
+        return "No unread emails found."
+
+    result = "Unread Emails:\n"
+    for email in emails:
+        result += f"- [From: {email.get('sender', 'Unknown')}]\n  Subject: {email['subject']}\n  Date: {email['date']}\n  Snippet: {email['snippet']}\n\n"
+    return result
+
+@tool
+def get_recent_emails(query: str = "", max_results: int = 5) -> str:
+    """
+    Get recent emails. Can filter by query.
+    Args:
+        query (str): Optional search query. defaults to "" (all emails).
+        max_results (int): Number of emails to retrieve. Defaults to 5.
+    """
+    if not google_manager:
+        return "Google Services not initialized."
+    
+    if not query:
+        query = "category:primary" # Default to primary inbox if no query
+
+    emails = google_manager.search_emails(query, max_results)
+    if not emails:
+        return "No emails found."
+    
+    # Format for the LLM
+    result = f"Recent {len(emails)} Emails:\n"
+    for email in emails:
+        result += f"Subject: {email['subject']}\nFrom: {email.get('sender', 'Unknown')}\nDate: {email['date']}\nSnippet: {email['snippet']}\n\n"
+    return result
+
+tools = [open_page, click_elements, type_in_elements, extract_elements, get_resume, schedule_interview, get_recent_emails, get_unread_emails]
+
+from langgraph.prebuilt import create_react_agent
 
 # ---- LLM ----
 llm = ChatGroq(
@@ -57,34 +130,40 @@ llm = ChatGroq(
     temperature=0
 )
 
-
-# llm = ChatGoogleGenerativeAI(
-#     model="gemini-2.5-flash",   
-#     temperature=0
-# )
-
-
 # ---- Create Agent ----
-agent = create_agent(
-    model=llm,
-    tools=tools,
-    system_prompt="""
-You are an assistant for web navigation and interaction. You can use the following tools to interact with web pages:
-1. open_page(url: str) -> str: Opens a webpage given a URL.
-2. click_elements(element_ids: list[str]) -> str: Clicks on elements identified by their element IDs.
-3. type_in_elements(entries: list[dict]) -> str: Types text into elements identified
-4. extract_elements() -> str: Extracts elements from the current page to understand its structure. This tool returns all 
-the elements including their element IDs and text content.
+system_prompt = """
+You are an assistant for web navigation and integration. You are capable of navigating the web, interacting with page elements, reading resumes from Google Drive, managing emails, and scheduling interviews on Google Calendar.
+
+Available Tools:
+1. open_page(url): Opens a webpage.
+2. click_elements(element_ids): Clicks elements by ID.
+3. type_in_elements(entries): Types text into elements.
+4. extract_elements(): Extracts page structure/elements.
+5. get_resume(filename): Reads resume text from Drive.
+6. schedule_interview(summary, start_time, duration): Schedules calendar events.
+7. get_recent_emails(query, max_results): Gets recent emails. Use this for general email checking.
+8. get_unread_emails(): Gets a summary of unread emails.
 
 User Details:
 Name: Abhijeet
 CGPA: 9.5
-phone number: 1234567890
-email:xyz@gmail.com
-class:computer science
+Phone: 1234567890
+Email: xyz@gmail.com
+Class: Computer Science
 
-    """
-)
+Instructions:
+- Use the provided tools to complete the user's request.
+- When opening a form, first open the page, then extract elements to understand the structure before interacting.
+- If you need to fill a form, use `extract_elements` to find the field IDs, then `type_in_elements` or `click_elements`.
+- You can access the user's resume for details if needed.
+- To check for emails, use `get_recent_emails()`. It defaults to checking the primary inbox (first 5). You can also provide a query.
+- To check unread emails specifically, use `get_unread_emails()`.
+- Analyze email snippets to find companies and dates as requested.
+- If a tool call fails, try to understand why (e.g., invalid JSON) and retry with the correct format.
+"""
+
+# Create the agent using LangGraph
+agent = create_react_agent(llm, tools)
 
 # ---- Run Loop ----
 print("Type 'exit' to quit")
@@ -94,13 +173,34 @@ while True:
     if user_input.lower() in ["exit", "quit"]:
         break
 
-    result = agent.invoke({
-        "messages": [HumanMessage(content=user_input)]
-    })
+    try:
+        # Update system prompt with current time to assist with "today", "tomorrow" queries
+        import datetime
+        current_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        dynamic_system_prompt = f"{system_prompt}\n\nCurrent Date and Time: {current_time_str}\nTimezone: Asia/Kolkata (IST)"
 
-    print("Agent:", result["messages"][-1].content)
+        # LangGraph agent is invoked directly
+        messages = [
+            ("system", dynamic_system_prompt),
+            ("user", user_input)
+        ]
+        
+        # Simple retry logic for rate limits
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                result = agent.invoke({"messages": messages})
+                # The result is a state dict, look for the last message
+                last_message = result["messages"][-1]
+                print("Agent:", last_message.content)
+                break # Success!
+            except Exception as e:
+                if "429" in str(e) and attempt < max_retries - 1:
+                    print(f"Rate limit hit. Retrying in 2 seconds... (Attempt {attempt + 1}/{max_retries})")
+                    import time
+                    time.sleep(2)
+                else:
+                    raise e # Re-raise if not 429 or out of retries
 
-
-
-
-# You: https://docs.google.com/forms/d/e/1FAIpQLSc4iTT49seK6JaNWqFjZCym2ifMRnA9HV1v7VLV9tzRoO4V2w/viewform?usp=header open this form, extract elements in this pagae and click on any one option at random
+    except Exception as e:
+        print(f"Error: {e}")
