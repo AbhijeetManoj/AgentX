@@ -17,7 +17,7 @@ SCOPES = [
     'https://www.googleapis.com/auth/calendar',
     'https://www.googleapis.com/auth/drive.readonly',
     'https://www.googleapis.com/auth/drive.metadata.readonly',
-    'https://www.googleapis.com/auth/gmail.readonly'
+    'https://www.googleapis.com/auth/gmail.modify'
 ]
 
 class GoogleServiceManager:
@@ -194,6 +194,74 @@ class GoogleServiceManager:
         except Exception as e:
             print(f"An unexpected error occurred searching emails: {e}")
             return []
+
+    def send_or_draft_email(self, to: str, subject: str, message_text: str, is_draft: bool = False) -> str:
+        """
+        Sends an email or saves it as a draft.
+        """
+        try:
+            from email.message import EmailMessage
+            message = EmailMessage()
+            message.set_content(message_text)
+            message['To'] = to
+            message['Subject'] = subject
+
+            encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
+            body = {'raw': encoded_message}
+
+            if is_draft:
+                draft = {'message': body}
+                draft = self._gmail_service.users().drafts().create(userId='me', body=draft).execute()
+                print(f"Draft id: {draft['id']} created")
+                return f"Draft created successfully with ID: {draft['id']}"
+            else:
+                sent_message = self._gmail_service.users().messages().send(userId='me', body=body).execute()
+                print(f"Message Id: {sent_message['id']} sent")
+                return f"Email sent successfully with ID: {sent_message['id']}"
+
+        except HttpError as error:
+            print(f"An error occurred sending/drafting email: {error}")
+            return f"An error occurred: {error}"
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+            return f"An unexpected error occurred: {e}"
+
+    def schedule_email(self, to: str, subject: str, message_text: str, send_at_iso: str) -> str:
+        """
+        Schedules an email to be sent at a specific time using a background thread.
+        send_at_iso should be in ISO format (e.g., '2023-10-27T10:00:00').
+        """
+        try:
+            import datetime
+            import threading
+            
+            target_time = datetime.datetime.fromisoformat(send_at_iso)
+            if target_time.tzinfo is not None:
+                # Target time is timezone-aware
+                now = datetime.datetime.now(datetime.timezone.utc).astimezone(target_time.tzinfo)
+            else:
+                # Target time is timezone-naive
+                now = datetime.datetime.now()
+            
+            delay = (target_time - now).total_seconds()
+            
+            if delay <= 0:
+                print("Scheduled time is in the past, sending immediately.")
+                return self.send_or_draft_email(to, subject, message_text, is_draft=False)
+
+            def delayed_send():
+                print(f"Background thread sending scheduled email to {to} now.")
+                self.send_or_draft_email(to, subject, message_text, is_draft=False)
+
+            timer = threading.Timer(delay, delayed_send)
+            timer.daemon = True # Allows program to exit if email is still pending
+            timer.start()
+            
+            delay_minutes = delay / 60
+            return f"Email successfully scheduled to {to}. It will go out in approx {delay_minutes:.1f} minutes."
+        except Exception as e:
+            print(f"Error scheduling email: {e}")
+            return f"Error scheduling email: {e}"
 
 if __name__ == '__main__':
     # Initial setup run

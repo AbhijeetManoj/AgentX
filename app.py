@@ -120,7 +120,35 @@ def get_recent_emails(query: str = "", max_results: int = 5) -> str:
         result += f"Subject: {email['subject']}\nFrom: {email.get('sender', 'Unknown')}\nDate: {email['date']}\nSnippet: {email['snippet']}\n\n"
     return result
 
-tools = [open_page, click_elements, type_in_elements, extract_elements, get_resume, schedule_interview, get_recent_emails, get_unread_emails]
+@tool
+def send_or_draft_email(to: str, subject: str, message_text: str, is_draft: bool = False) -> str:
+    """
+    Send an email or create a draft.
+    Args:
+        to (str): Recipient email address.
+        subject (str): Email subject.
+        message_text (str): Body of the email.
+        is_draft (bool): Set to True to save as draft instead of sending. Defaults to False.
+    """
+    if not google_manager:
+        return "Google Services not initialized."
+    return google_manager.send_or_draft_email(to, subject, message_text, is_draft)
+
+@tool
+def schedule_email(to: str, subject: str, message_text: str, send_at_iso: str) -> str:
+    """
+    Schedule an email to be sent at a specific time.
+    Args:
+        to (str): Recipient email address.
+        subject (str): Email subject.
+        message_text (str): Body of the email.
+        send_at_iso (str): Time to send the email in ISO format (e.g., '2023-10-27T10:00:00').
+    """
+    if not google_manager:
+        return "Google Services not initialized."
+    return google_manager.schedule_email(to, subject, message_text, send_at_iso)
+
+tools = [open_page, click_elements, type_in_elements, extract_elements, get_resume, schedule_interview, get_recent_emails, get_unread_emails, send_or_draft_email, schedule_email]
 
 from langgraph.prebuilt import create_react_agent
 
@@ -143,6 +171,8 @@ Available Tools:
 6. schedule_interview(summary, start_time, duration): Schedules calendar events.
 7. get_recent_emails(query, max_results): Gets recent emails. Use this for general email checking.
 8. get_unread_emails(): Gets a summary of unread emails.
+9. send_or_draft_email(to, subject, message_text, is_draft): Sends an email or creates a draft.
+10. schedule_email(to, subject, message_text, send_at_iso): Schedules an email to be sent at a specific time.
 
 User Details:
 Name: Abhijeet
