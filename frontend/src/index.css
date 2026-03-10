@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply m-0 p-0 text-gray-800 bg-[#f8f9fa] font-sans antialiased h-screen overflow-hidden;
+  }
+}
+
+/* Custom XYFlow styles to make it look like n8n */
+.react-flow__node {
+  border-radius: 8px;
+}
+
+.react-flow__handle {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: #8c92a4;
+  border: 2px solid white;
+}
+
+.react-flow__edge-path {
+  stroke: #b3b3b3;
+  stroke-width: 2;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

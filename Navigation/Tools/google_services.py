@@ -11,13 +11,15 @@ import datetime
 import io
 from googleapiclient.http import MediaIoBaseDownload
 from pypdf import PdfReader
+from gtts import gTTS
 
 # Scopes need to change if you need more permissions
 SCOPES = [
     'https://www.googleapis.com/auth/calendar',
     'https://www.googleapis.com/auth/drive.readonly',
     'https://www.googleapis.com/auth/drive.metadata.readonly',
-    'https://www.googleapis.com/auth/gmail.modify'
+    'https://www.googleapis.com/auth/gmail.modify',
+    'https://www.googleapis.com/auth/spreadsheets'
 ]
 
 class GoogleServiceManager:
@@ -31,6 +33,7 @@ class GoogleServiceManager:
         self._calendar_service = build('calendar', 'v3', credentials=self.creds)
         self._drive_service = build('drive', 'v3', credentials=self.creds)
         self._gmail_service = build('gmail', 'v1', credentials=self.creds)
+        self._sheets_service = build('sheets', 'v4', credentials=self.creds)
 
     def _authenticate(self):
         """Authenticates with Google OAuth 2.0 flow."""
@@ -262,6 +265,54 @@ class GoogleServiceManager:
         except Exception as e:
             print(f"Error scheduling email: {e}")
             return f"Error scheduling email: {e}"
+
+    # --- Google Sheets Functions ---
+
+    def get_sheet_data(self, spreadsheet_id: str, range_name: str):
+        """
+        Reads data from a Google Sheet.
+        range_name example: 'Sheet1!A1:D10'
+        """
+        try:
+            result = self._sheets_service.spreadsheets().values().get(
+                spreadsheetId=spreadsheet_id, range=range_name).execute()
+            values = result.get('values', [])
+            
+            if not values:
+                return "No data found in the specified range."
+                
+            # Format as simple text string for LLM easily reading rows
+            formatted_data = "\\n".join([" | ".join(map(str, row)) for row in values])
+            return formatted_data
+        except HttpError as error:
+            return f"An error occurred getting sheet data: {error}"
+
+    def update_sheet_data(self, spreadsheet_id: str, range_name: str, values: list):
+        """
+        Writes data to a Google Sheet.
+        values should be a list of lists, e.g., [['Name', 'Age'], ['Alice', 30]]
+        """
+        try:
+            body = {'values': values}
+            result = self._sheets_service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id, range=range_name,
+                valueInputOption='USER_ENTERED', body=body).execute()
+            return f"{result.get('updatedCells')} cells updated."
+        except HttpError as error:
+            return f"An error occurred updating sheet data: {error}"
+
+    # --- Text to Speech (gTTS) ---
+
+    def text_to_speech(self, text: str, output_filename: str = "output.mp3") -> str:
+        """
+        Converts text to speech using Google Translate TTS and saves as an audio file.
+        """
+        try:
+            tts = gTTS(text=text, lang='en', slow=False)
+            tts.save(output_filename)
+            return f"Audio saved successfully to {os.path.abspath(output_filename)}"
+        except Exception as e:
+            return f"Error converting text to speech: {str(e)}"
 
 if __name__ == '__main__':
     # Initial setup run

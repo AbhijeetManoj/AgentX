@@ -148,7 +148,44 @@ def schedule_email(to: str, subject: str, message_text: str, send_at_iso: str) -
         return "Google Services not initialized."
     return google_manager.schedule_email(to, subject, message_text, send_at_iso)
 
-tools = [open_page, click_elements, type_in_elements, extract_elements, get_resume, schedule_interview, get_recent_emails, get_unread_emails, send_or_draft_email, schedule_email]
+@tool
+def read_google_sheet(spreadsheet_id: str, range_name: str) -> str:
+    """
+    Read data from a Google Sheet.
+    Args:
+        spreadsheet_id (str): The ID of the spreadsheet (found in its URL).
+        range_name (str): The A1 notation of the values to retrieve (e.g. 'Sheet1!A1:D10').
+    """
+    if not google_manager:
+        return "Google Services not initialized."
+    return google_manager.get_sheet_data(spreadsheet_id, range_name)
+
+@tool
+def write_google_sheet(spreadsheet_id: str, range_name: str, values: list) -> str:
+    """
+    Write a 2D array of data to a Google Sheet.
+    Args:
+        spreadsheet_id (str): The ID of the spreadsheet.
+        range_name (str): The A1 notation of the values to update (e.g. 'Sheet1!A1:D10').
+        values (list): A list of lists representing rows and columns, e.g., [['Name', 'Age'], ['Alice', 30]].
+    """
+    if not google_manager:
+        return "Google Services not initialized."
+    return google_manager.update_sheet_data(spreadsheet_id, range_name, values)
+
+@tool
+def convert_text_to_speech(text: str, filename: str = "output.mp3") -> str:
+    """
+    Convert text to an MP3 audio file using Google Translate Text-to-Speech (gTTS).
+    Args:
+        text (str): The text to convert to speech.
+        filename (str): The output file name. Defaults to "output.mp3".
+    """
+    if not google_manager:
+        return "Google Services not initialized."
+    return google_manager.text_to_speech(text, filename)
+
+tools = [open_page, click_elements, type_in_elements, extract_elements, get_resume, schedule_interview, get_recent_emails, get_unread_emails, send_or_draft_email, schedule_email, read_google_sheet, write_google_sheet, convert_text_to_speech]
 
 from langgraph.prebuilt import create_react_agent
 
@@ -173,6 +210,9 @@ Available Tools:
 8. get_unread_emails(): Gets a summary of unread emails.
 9. send_or_draft_email(to, subject, message_text, is_draft): Sends an email or creates a draft.
 10. schedule_email(to, subject, message_text, send_at_iso): Schedules an email to be sent at a specific time.
+11. read_google_sheet(spreadsheet_id, range_name): Read data from a Google Sheet.
+12. write_google_sheet(spreadsheet_id, range_name, values): Write an array of data to a Google Sheet.
+13. convert_text_to_speech(text, filename): Convert text to speech audio file using Google TTS.
 
 User Details:
 Name: Abhijeet
@@ -190,47 +230,49 @@ Instructions:
 - To check unread emails specifically, use `get_unread_emails()`.
 - Analyze email snippets to find companies and dates as requested.
 - If a tool call fails, try to understand why (e.g., invalid JSON) and retry with the correct format.
+- CRITICAL: Once you have successfully executed the tool(s) to fulfill the user's request (e.g. sending an email or scheduling an event), STOP. Do NOT call `get_recent_emails` or perform additional checking unless explicitly asked. Provide your final answer immediately.
 """
 
 # Create the agent using LangGraph
 agent = create_react_agent(llm, tools)
 
 # ---- Run Loop ----
-print("Type 'exit' to quit")
+if __name__ == '__main__':
+    print("Type 'exit' to quit")
 
-while True:
-    user_input = input("\nYou: ")
-    if user_input.lower() in ["exit", "quit"]:
-        break
+    while True:
+        user_input = input("\nYou: ")
+        if user_input.lower() in ["exit", "quit"]:
+            break
 
-    try:
-        # Update system prompt with current time to assist with "today", "tomorrow" queries
-        import datetime
-        current_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        dynamic_system_prompt = f"{system_prompt}\n\nCurrent Date and Time: {current_time_str}\nTimezone: Asia/Kolkata (IST)"
+        try:
+            # Update system prompt with current time to assist with "today", "tomorrow" queries
+            import datetime
+            current_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            dynamic_system_prompt = f"{system_prompt}\n\nCurrent Date and Time: {current_time_str}\nTimezone: Asia/Kolkata (IST)"
 
-        # LangGraph agent is invoked directly
-        messages = [
-            ("system", dynamic_system_prompt),
-            ("user", user_input)
-        ]
-        
-        # Simple retry logic for rate limits
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                result = agent.invoke({"messages": messages})
-                # The result is a state dict, look for the last message
-                last_message = result["messages"][-1]
-                print("Agent:", last_message.content)
-                break # Success!
-            except Exception as e:
-                if "429" in str(e) and attempt < max_retries - 1:
-                    print(f"Rate limit hit. Retrying in 2 seconds... (Attempt {attempt + 1}/{max_retries})")
-                    import time
-                    time.sleep(2)
-                else:
-                    raise e # Re-raise if not 429 or out of retries
+            # LangGraph agent is invoked directly
+            messages = [
+                ("system", dynamic_system_prompt),
+                ("user", user_input)
+            ]
+            
+            # Simple retry logic for rate limits
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    result = agent.invoke({"messages": messages})
+                    # The result is a state dict, look for the last message
+                    last_message = result["messages"][-1]
+                    print("Agent:", last_message.content)
+                    break # Success!
+                except Exception as e:
+                    if "429" in str(e) and attempt < max_retries - 1:
+                        print(f"Rate limit hit. Retrying in 2 seconds... (Attempt {attempt + 1}/{max_retries})")
+                        import time
+                        time.sleep(2)
+                    else:
+                        raise e # Re-raise if not 429 or out of retries
 
-    except Exception as e:
-        print(f"Error: {e}")
+        except Exception as e:
+            print(f"Error: {e}")
