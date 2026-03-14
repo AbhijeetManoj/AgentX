@@ -192,7 +192,8 @@ from langgraph.prebuilt import create_react_agent
 # ---- LLM ----
 llm = ChatGroq(
     model="llama-3.3-70b-versatile",
-    temperature=0
+    temperature=0,
+    model_kwargs={"parallel_tool_calls": False}  # ← passed directly to Groq API
 )
 
 # ---- Create Agent ----
