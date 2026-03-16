@@ -185,7 +185,34 @@ def convert_text_to_speech(text: str, filename: str = "output.mp3") -> str:
         return "Google Services not initialized."
     return google_manager.text_to_speech(text, filename)
 
-tools = [open_page, click_elements, type_in_elements, extract_elements, get_resume, schedule_interview, get_recent_emails, get_unread_emails, send_or_draft_email, schedule_email, read_google_sheet, write_google_sheet, convert_text_to_speech]
+@tool
+def create_google_doc(title: str, content: str = "") -> str:
+    """
+    Create a new Google Doc.
+    Args:
+        title (str): Title of the document.
+        content (str): Optional initial content to write into the doc.
+    Returns the doc ID and URL.
+    """
+    if not google_manager:
+        return "Google Services not initialized."
+    return google_manager.create_google_doc(title, content)
+
+@tool
+def edit_google_doc(doc_id: str, action: str, content: str, index: int = 1) -> str:
+    """
+    Edit an existing Google Doc.
+    Args:
+        doc_id (str): The document ID (from the URL or create_google_doc).
+        action (str): One of 'append' (add to end), 'insert' (add at index), 'replace_all' (overwrite everything).
+        content (str): The text to insert/append/replace with.
+        index (int): Character index for 'insert' action. Defaults to 1.
+    """
+    if not google_manager:
+        return "Google Services not initialized."
+    return google_manager.edit_google_doc(doc_id, action, content, index)
+
+tools = [open_page, click_elements, type_in_elements, extract_elements, get_resume, schedule_interview, get_recent_emails, get_unread_emails, send_or_draft_email, schedule_email, read_google_sheet, write_google_sheet, convert_text_to_speech, create_google_doc, edit_google_doc]
 
 from langgraph.prebuilt import create_react_agent
 
@@ -214,6 +241,8 @@ Available Tools:
 11. read_google_sheet(spreadsheet_id, range_name): Read data from a Google Sheet.
 12. write_google_sheet(spreadsheet_id, range_name, values): Write an array of data to a Google Sheet.
 13. convert_text_to_speech(text, filename): Convert text to speech audio file using Google TTS.
+14. create_google_doc(title, content): Creates a new Google Doc. Returns doc ID and URL.
+15. edit_google_doc(doc_id, action, content, index): Edits a Google Doc. action is one of: 'append', 'insert', 'replace_all'.
 
 User Details:
 Name: Abhijeet

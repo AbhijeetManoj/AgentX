@@ -16,12 +16,12 @@ from gtts import gTTS
 # Scopes need to change if you need more permissions
 SCOPES = [
     'https://www.googleapis.com/auth/calendar',
-    'https://www.googleapis.com/auth/drive.readonly',
+    'https://www.googleapis.com/auth/drive',
     'https://www.googleapis.com/auth/drive.metadata.readonly',
     'https://www.googleapis.com/auth/gmail.modify',
-    'https://www.googleapis.com/auth/spreadsheets'
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/documents'
 ]
-
 class GoogleServiceManager:
     def __init__(self, credentials_path='credentials.json', token_path='token.json'):
         self.creds = None
@@ -34,6 +34,7 @@ class GoogleServiceManager:
         self._drive_service = build('drive', 'v3', credentials=self.creds)
         self._gmail_service = build('gmail', 'v1', credentials=self.creds)
         self._sheets_service = build('sheets', 'v4', credentials=self.creds)
+        self._docs_service = build('docs', 'v1', credentials=self.creds)
 
     def _authenticate(self):
         """Authenticates with Google OAuth 2.0 flow."""
@@ -314,6 +315,85 @@ class GoogleServiceManager:
         except Exception as e:
             return f"Error converting text to speech: {str(e)}"
 
+    # --- Google Docs Functions ---
+
+    def create_google_doc(self, title: str, content: str = "") -> str:
+        """Creates a new Google Doc with optional content."""
+        try:
+            doc = self._docs_service.documents().create(body={"title": title}).execute()
+            doc_id = doc["documentId"]
+
+            if content:
+                requests = [{
+                    "insertText": {
+                        "location": {"index": 1},
+                        "text": content
+                    }
+                }]
+                self._docs_service.documents().batchUpdate(
+                    documentId=doc_id,
+                    body={"requests": requests}
+                ).execute()
+
+            doc_url = f"https://docs.google.com/document/d/{doc_id}/edit"
+            return f"Google Doc created!\nTitle: {title}\nID: {doc_id}\nURL: {doc_url}"
+        except Exception as e:
+            return f"Failed to create Google Doc: {str(e)}"
+
+    def edit_google_doc(self, doc_id: str, action: str, content: str, index: int = 1) -> str:
+        """
+        Edits an existing Google Doc.
+        action: 'append' | 'insert' | 'replace_all'
+        - append: adds content at the end of the doc
+        - insert: inserts content at the given index
+        - replace_all: replaces all text with new content
+        """
+        try:
+            if action == "replace_all":
+                # First get doc to find end index
+                doc = self._docs_service.documents().get(documentId=doc_id).execute()
+                end_index = doc['body']['content'][-1]['endIndex'] - 1
+                requests = [
+                    {
+                        "deleteContentRange": {
+                            "range": {"startIndex": 1, "endIndex": end_index}
+                        }
+                    },
+                    {
+                        "insertText": {
+                            "location": {"index": 1},
+                            "text": content
+                        }
+                    }
+                ]
+            elif action == "append":
+                doc = self._docs_service.documents().get(documentId=doc_id).execute()
+                end_index = doc['body']['content'][-1]['endIndex'] - 1
+                requests = [{
+                    "insertText": {
+                        "location": {"index": end_index},
+                        "text": content
+                    }
+                }]
+            elif action == "insert":
+                requests = [{
+                    "insertText": {
+                        "location": {"index": index},
+                        "text": content
+                    }
+                }]
+            else:
+                return f"Unknown action '{action}'. Use 'append', 'insert', or 'replace_all'."
+
+            self._docs_service.documents().batchUpdate(
+                documentId=doc_id,
+                body={"requests": requests}
+            ).execute()
+
+            doc_url = f"https://docs.google.com/document/d/{doc_id}/edit"
+            return f"Google Doc updated successfully!\nURL: {doc_url}"
+        except Exception as e:
+            return f"Failed to edit Google Doc: {str(e)}"
 if __name__ == '__main__':
     # Initial setup run
     agent = GoogleServiceManager()
