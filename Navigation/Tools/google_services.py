@@ -305,12 +305,16 @@ class GoogleServiceManager:
     # --- Text to Speech (gTTS) ---
 
     def text_to_speech(self, text: str, output_filename: str = "output.mp3") -> str:
-        """
-        Converts text to speech using Google Translate TTS and saves as an audio file.
-        """
+        """Converts text to speech using Microsoft Edge TTS (free, no API key needed)."""
         try:
-            tts = gTTS(text=text, lang='en', slow=False)
-            tts.save(output_filename)
+            import asyncio
+            import edge_tts
+
+            async def _generate():
+                communicate = edge_tts.Communicate(text, voice="en-US-AriaNeural")
+                await communicate.save(output_filename)
+
+            asyncio.run(_generate())
             return f"Audio saved successfully to {os.path.abspath(output_filename)}"
         except Exception as e:
             return f"Error converting text to speech: {str(e)}"
